@@ -1,42 +1,26 @@
-<<<<<<< HEAD
-from flask import Flask, request, Response
-from flask_cors import CORS
-import xml.etree.ElementTree as ET
-
-app = Flask(__name__)
-CORS(app)
-
-@app.route("/process_payment", methods=["POST"])
-def pay():
-    root = ET.fromstring(request.data)
-
-    amount = float(root.find("Amount").text)
-    product = root.find("ProductName").text
-    qty = int(root.find("Quantity").text)
-
-    res = ET.Element("PaymentResponse")
-
-    if amount > 0 and qty > 0:
-        ET.SubElement(res, "Status").text = "Success"
-        ET.SubElement(res, "TransactionID").text = f"TXN-{abs(hash(product+str(amount))) % 999999}"
-        ET.SubElement(res, "Amount").text = str(amount)
-    else:
-        ET.SubElement(res, "Status").text = "Failed"
-        ET.SubElement(res, "Message").text = "Invalid payment"
-
-    return Response(ET.tostring(res, encoding="unicode"),
-                    mimetype="application/xml")
-
-
-if __name__ == "__main__":
-=======
 from flask import Flask, request, Response
 from flask_cors import CORS
 import xml.etree.ElementTree as ET
 import uuid
+import os
 
 app = Flask(__name__)
 CORS(app)
+
+RECEIPTS_FILE = "receipts.xml"
+
+
+def load_receipts():
+    if not os.path.exists(RECEIPTS_FILE):
+        root = ET.Element("Receipts")
+        ET.ElementTree(root).write(RECEIPTS_FILE)
+        return root
+    return ET.parse(RECEIPTS_FILE).getroot()
+
+
+def save_receipts(root):
+    ET.ElementTree(root).write(RECEIPTS_FILE)
+
 
 @app.route('/process_payment', methods=['POST'])
 def pay():
@@ -46,20 +30,25 @@ def pay():
     product = root.find('ProductName').text
     qty = int(root.find('Quantity').text)
 
-    res = ET.Element("PaymentResponse")
+    receipts = load_receipts()
 
-    if amount > 0:
-        ET.SubElement(res, "Status").text = "Success"
-        ET.SubElement(res, "TransactionID").text = f"TXN-{uuid.uuid4().hex[:8].upper()}"
-        ET.SubElement(res, "Amount").text = str(amount)
-        ET.SubElement(res, "ProductName").text = product
-        ET.SubElement(res, "Quantity").text = str(qty)
-    else:
-        ET.SubElement(res, "Status").text = "Failed"
+    receipt = ET.SubElement(receipts, "Receipt")
+    ET.SubElement(receipt, "TransactionID").text = f"TXN-{uuid.uuid4().hex[:8].upper()}"
+    ET.SubElement(receipt, "ProductName").text = product
+    ET.SubElement(receipt, "Quantity").text = str(qty)
+    ET.SubElement(receipt, "Amount").text = str(amount)
+    ET.SubElement(receipt, "Status").text = "Success" if amount > 0 else "Failed"
 
-    return Response(ET.tostring(res, encoding="unicode"), mimetype="application/xml")
+    save_receipts(receipts)
+
+    return Response(ET.tostring(receipt, encoding="unicode"), mimetype="application/xml")
+
+
+@app.route('/receipts', methods=['GET'])
+def get_receipts():
+    root = load_receipts()
+    return Response(ET.tostring(root, encoding="unicode"), mimetype="application/xml")
 
 
 if __name__ == "__main__":
->>>>>>> ce45a0404d7d8cdf0354ec5d498e1f2738d63b13
     app.run(port=5002, debug=True)
